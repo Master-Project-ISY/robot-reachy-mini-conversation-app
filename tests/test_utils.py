@@ -1,6 +1,7 @@
 """Tests for utility helpers."""
 
 import argparse
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -94,4 +95,52 @@ def test_initialize_camera_and_vision_uses_mediapipe_head_tracker_in_process() -
     ):
         initialize_camera_and_vision(args, current_robot)
 
-    mock_camera_worker.assert_called_once_with(current_robot, mediapipe_head_tracker)
+    mock_camera_worker.assert_called_once_with(current_robot, mediapipe_head_tracker, None)
+
+
+def test_initialize_camera_and_vision_uses_webcam_when_sim_cam_set() -> None:
+    """When --sim-cam is set, a webcam frame source callable is passed to CameraWorker."""
+    args = argparse.Namespace(
+        no_camera=False,
+        head_tracker=None,
+        local_vision=False,
+        sim_cam=0,
+    )
+    mock_cv2 = MagicMock()
+    mock_cap = MagicMock()
+    mock_cap.isOpened.return_value = True
+    mock_cv2.VideoCapture.return_value = mock_cap
+    current_robot = MagicMock()
+
+    with (
+        patch("reachy_mini_conversation_app.utils.CameraWorker") as mock_camera_worker,
+        patch.dict(sys.modules, {"cv2": mock_cv2}),
+    ):
+        initialize_camera_and_vision(args, current_robot)
+
+    mock_cv2.VideoCapture.assert_called_once_with(0)
+    call_args = mock_camera_worker.call_args[0]
+    assert call_args[0] is current_robot
+    assert call_args[1] is None  # no head tracker
+    assert callable(call_args[2])  # frame source passed
+
+
+def test_initialize_camera_and_vision_raises_when_sim_cam_not_opened() -> None:
+    """When --sim-cam names an inaccessible camera, a clean error is raised."""
+    args = argparse.Namespace(
+        no_camera=False,
+        head_tracker=None,
+        local_vision=False,
+        sim_cam=5,
+    )
+    mock_cv2 = MagicMock()
+    mock_cap = MagicMock()
+    mock_cap.isOpened.return_value = False
+    mock_cv2.VideoCapture.return_value = mock_cap
+
+    with (
+        patch("reachy_mini_conversation_app.utils.CameraWorker"),
+        patch.dict(sys.modules, {"cv2": mock_cv2}),
+        pytest.raises(CameraVisionInitializationError, match="Could not open webcam at index 5"),
+    ):
+        initialize_camera_and_vision(args, MagicMock())

@@ -3,6 +3,7 @@
 import time
 import logging
 import threading
+from collections.abc import Callable
 from typing import List, Tuple
 
 import numpy as np
@@ -20,10 +21,16 @@ logger = logging.getLogger(__name__)
 class CameraWorker:
     """Thread-safe camera worker with frame buffering and optional head tracking."""
 
-    def __init__(self, reachy_mini: ReachyMini, head_tracker: HeadTracker | None = None) -> None:
+    def __init__(
+        self,
+        reachy_mini: ReachyMini,
+        head_tracker: HeadTracker | None = None,
+        frame_source: Callable[[], NDArray[np.uint8] | None] | None = None,
+    ) -> None:
         """Initialize."""
         self.reachy_mini = reachy_mini
         self.head_tracker = head_tracker
+        self._frame_source = frame_source
 
         self.latest_frame: NDArray[np.uint8] | None = None
         self.frame_lock = threading.Lock()
@@ -97,7 +104,7 @@ class CameraWorker:
         while not self._stop_event.is_set():
             try:
                 current_time = time.time()
-                frame = self.reachy_mini.media.get_frame()
+                frame = self._frame_source() if self._frame_source is not None else self.reachy_mini.media.get_frame()
 
                 if frame is not None:
                     # Keep the latest frame available for tools and UI consumers
@@ -206,3 +213,20 @@ class CameraWorker:
                 time.sleep(0.1)
 
         logger.debug("Camera worker thread exited")
+
+
+def webcam_frame_source(camera_index: int = 0) -> Callable[[], NDArray[np.uint8] | None]:
+    """Return a frame source callable that reads BGR frames from a local webcam."""
+    try:
+        import cv2
+    except ImportError as e:
+        raise ImportError("--sim-cam requires opencv-python: pip install 'opencv-python'") from e
+    cap = cv2.VideoCapture(camera_index)
+    if not cap.isOpened():
+        raise RuntimeError(f"Could not open webcam at index {camera_index}. Try a different --sim-cam index.")
+
+    def _read() -> NDArray[np.uint8] | None:
+        ret, frame = cap.read()
+        return frame if ret else None  # type: ignore[return-value]
+
+    return _read

@@ -7,7 +7,7 @@ import subprocess
 from typing import TYPE_CHECKING, Optional
 
 from reachy_mini import ReachyMini
-from reachy_mini_conversation_app.camera_worker import CameraWorker
+from reachy_mini_conversation_app.camera_worker import CameraWorker, webcam_frame_source
 from reachy_mini_conversation_app.vision.head_tracking import HeadTracker
 
 
@@ -32,6 +32,15 @@ def parse_args() -> tuple[argparse.Namespace, list]:  # type: ignore
         ),
     )
     parser.add_argument("--no-camera", default=False, action="store_true", help="Disable camera usage")
+    parser.add_argument(
+        "--sim-cam",
+        type=int,
+        nargs="?",
+        const=0,
+        default=None,
+        metavar="INDEX",
+        help="Use laptop webcam as camera source (INDEX defaults to 0). Intended for use with the simulated robot.",
+    )
     parser.add_argument(
         "--local-vision",
         default=False,
@@ -109,7 +118,16 @@ def initialize_camera_and_vision(
                     f"Failed to initialize {args.head_tracker} head tracker: {e}",
                 ) from e
 
-        camera_worker = CameraWorker(current_robot, head_tracker)
+        sim_cam_index = getattr(args, "sim_cam", None)
+        frame_source = None
+        if sim_cam_index is not None:
+            try:
+                frame_source = webcam_frame_source(sim_cam_index)
+                logging.getLogger(__name__).info("Using laptop webcam at index %d as camera source", sim_cam_index)
+            except (ImportError, RuntimeError) as e:
+                raise CameraVisionInitializationError(str(e)) from e
+
+        camera_worker = CameraWorker(current_robot, head_tracker, frame_source)
 
         if args.local_vision:
             result = subprocess.run(
