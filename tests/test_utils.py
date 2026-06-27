@@ -1,7 +1,7 @@
 """Tests for utility helpers."""
 
-import argparse
 import sys
+import argparse
 from unittest.mock import MagicMock, patch
 
 import pytest

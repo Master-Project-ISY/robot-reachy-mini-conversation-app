@@ -3,8 +3,8 @@
 import time
 import logging
 import threading
-from collections.abc import Callable
 from typing import List, Tuple
+from collections.abc import Callable
 
 import numpy as np
 from numpy.typing import NDArray
